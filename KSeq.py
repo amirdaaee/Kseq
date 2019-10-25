@@ -16,6 +16,7 @@ class SeqGen(utils.Sequence):
                  sort=1,
                  x_fn=None,
                  y_fn=None,
+                 inbatch_suffle=False,
                  verbosity=False):
         """
         Parameters
@@ -34,7 +35,9 @@ class SeqGen(utils.Sequence):
             -1: descending sort
         x_fn , y_fn: function | None
             np.ndarray -> any
-        verbosity = bool
+        inbatch_suffle: bool
+            whether shuffle data `on_epoch_end`
+        verbosity: bool
         """
 
         if verbosity:
@@ -44,6 +47,7 @@ class SeqGen(utils.Sequence):
         self.input_length, self.output_length = input_length, output_length
         self.feature_col, self.target_col = feature_columns, target_columns
         self.xfn, self.yfn = x_fn, y_fn
+        self.shuffle = inbatch_suffle
         # ......................
         if sort != 0:
             sort = {1: True, -1: False}[sort]
@@ -64,7 +68,7 @@ class SeqGen(utils.Sequence):
         self.x_ts = np.array(x_ts, dtype=np.uint32)
         self.y_ts = np.array(y_ts, dtype=np.uint32)
         # ......................
-        self.meta_index = np.arange(self.sample_n, dtype=np.uint32)
+        self.__reset_batch_index__()
         self.mode = 'batch'
         if verbosity:
             print(self)
@@ -89,25 +93,21 @@ class SeqGen(utils.Sequence):
 
     # -------------- abs mode
     def __getitem__abs__(self, idx):
-        x = self.X[self.x_ts[idx, :], :].copy()
-        if len(x) == 0:
-            x = None
-        else:
-            if x.ndim == 2:
-                x = x[np.newaxis, :, :]
-            if self.xfn is not None:
-                x = self.xfn(x)
-
-        y = self.Y[self.y_ts[idx, :], :].copy()
-        if len(y) == 0:
-            y = None
-        else:
-            if y.ndim == 2:
-                y = y[np.newaxis, :, :]
-            if self.yfn is not None:
-                y = self.yfn(y)
-
-        return x, y
+        ds = [self.X, self.Y]
+        ts = [self.x_ts, self.y_ts]
+        fs = [self.xfn, self.yfn]
+        r = [None, None]
+        for c, d, t, f in zip([0, 1], ds, ts, fs):
+            i = t[idx, :]
+            r[c] = d[i, :].copy()
+            if r[c].size == 0:
+                r[c] = None
+                continue
+            if r[c].ndim == 2:
+                r[c] = r[c][np.newaxis, :, :]
+            if f is not None:
+                r[c] = f(r[c])
+        return r
 
     # -------------- batch mode
     def __getitem__batch__(self, idx):  # needs more works!
@@ -116,7 +116,7 @@ class SeqGen(utils.Sequence):
         idx = self.meta_index[idx * self.batch_size:(idx + 1) * self.batch_size]
         return self.__getitem__abs__(idx)
 
-    # ======================================
+    # ====================================== other functions
     def __str__(self):
         s = ''
         s += 'input_length :\t{}\n'.format(self.input_length)
@@ -134,7 +134,14 @@ class SeqGen(utils.Sequence):
         s += '-' * 50
         return s
 
-    # ====================================== batch_size
+    def on_epoch_end(self):
+        if self.shuffle:
+            np.random.shuffle(self.meta_index)
+
+    def __reset_batch_index__(self):
+        self.meta_index = np.arange(self.sample_n, dtype=np.uint32)
+
+    # ====================================== properties
     @property
     def batch_size(self):
         return self._batch_size

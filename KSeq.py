@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from keras import utils
+import copy
 
 
 class SeqGen(utils.Sequence):
@@ -21,7 +22,7 @@ class SeqGen(utils.Sequence):
         """
         Parameters
         ----------
-        dataset : pd.DataFrame
+        dataset : list[pd.DataFrame] or pd.DataFrame
         input_length , output_length: int
             must be >=0
         feature_columns , target_columns: list
@@ -43,7 +44,9 @@ class SeqGen(utils.Sequence):
         if verbosity:
             print('TS generator initializing...')
         # ...................... preparing args
-        self.dataset = dataset.copy()
+        if type(dataset) == pd.DataFrame:
+            dataset = [dataset]
+        self.dataset = copy.deepcopy(dataset)
         self.input_length, self.output_length = input_length, output_length
         self.feature_col, self.target_col = feature_columns, target_columns
         self.xfn, self.yfn = x_fn, y_fn
@@ -51,23 +54,33 @@ class SeqGen(utils.Sequence):
         # ......................
         if sort != 0:
             sort = {1: True, -1: False}[sort]
-            self.dataset.sort_index(ascending=sort, inplace=True)
+            for c, ds in enumerate(self.dataset):
+                self.dataset[c] = ds.sort_index(ascending=sort)
             if verbosity:
                 print('sorting : ascending', sort)
         else:
             if verbosity:
                 print("sorting : no")
-        # ......................
-        self.X = self.dataset[self.feature_col].values
-        self.Y = self.dataset[self.target_col].values
-        # ......................
-        self.sample_n = int(len(self.dataset) - (self.input_length + self.output_length) + 1)
+        # ..................................................
+        ts_len = self.input_length + self.output_length
+        tmp_array = []
+        for c, ds in enumerate(self.dataset):
+            m = len(ds) - ts_len + 1
+            tmp_array.append(np.array([np.arange(i, ts_len + i) for i in range(m)]))
+            if c == 0:
+                continue
+            last_index = tmp_array[-2][-1, -1]
+            tmp_array[-1] += (last_index + 1)
+
+        all_ts = np.vstack(tmp_array).astype(np.uint32)
+        self.x_ts, self.y_ts = np.hsplit(all_ts, (self.input_length,))
+        self.sample_n = len(all_ts)
         self.batch_size = batch_size
-        x_ts = [np.arange(i, i + input_length) for i in range(self.sample_n)]
-        y_ts = [np.arange(i + input_length, i + input_length + output_length) for i in range(self.sample_n)]
-        self.x_ts = np.array(x_ts, dtype=np.uint32)
-        self.y_ts = np.array(y_ts, dtype=np.uint32)
-        # ......................
+        # ....................................................
+        conc_dataset = pd.concat(self.dataset, axis=0)
+        self.X = conc_dataset[self.feature_col].values
+        self.Y = conc_dataset[self.target_col].values
+        # ....................................................
         self.__reset_batch_index__()
         self.mode = 'batch'
         if verbosity:

@@ -1,7 +1,7 @@
 # KSeq
-A keras timeseries generator:
+A Keras timeseries generator:
 * Pandas dataframe as data source
-* multi step ahead target
-* data preprocessing on the fly!
-* multiprocessing friendly
+* Multi-step ahead target
+* Data preprocessing on the fly!
+* Multiprocessing friendly
 * ...

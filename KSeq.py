@@ -2,6 +2,9 @@ import numpy as np
 import pandas as pd
 from keras import utils
 import copy
+import abc
+import inspect
+import traceback
 
 
 class SeqGen(utils.Sequence):
@@ -15,8 +18,6 @@ class SeqGen(utils.Sequence):
                  target_columns,
                  batch_size=64,
                  sort=1,
-                 x_fn=None,
-                 y_fn=None,
                  inbatch_suffle=False,
                  verbosity=False):
         """
@@ -34,8 +35,6 @@ class SeqGen(utils.Sequence):
             1: ascending sort (default)
             0: Do not perform sorting
             -1: descending sort
-        x_fn , y_fn: function | None
-            np.ndarray -> any
         inbatch_suffle: bool
             whether shuffle data `on_epoch_end`
         verbosity: bool
@@ -49,7 +48,6 @@ class SeqGen(utils.Sequence):
         self.dataset = copy.deepcopy(dataset)
         self.input_length, self.output_length = input_length, output_length
         self.feature_col, self.target_col = feature_columns, target_columns
-        self.xfn, self.yfn = x_fn, y_fn
         self.shuffle = inbatch_suffle
         # ......................
         if sort != 0:
@@ -102,6 +100,8 @@ class SeqGen(utils.Sequence):
         try:
             return self.__getitem__mode__(idx)
         except Exception as e:
+            traceback.print_tb(e.__traceback__)
+            print('index', idx)
             raise Exception(e)
 
     # -------------- abs mode
@@ -119,7 +119,13 @@ class SeqGen(utils.Sequence):
             if r[c].ndim == 2:
                 r[c] = r[c][np.newaxis, :, :]
             if f is not None:
-                r[c] = f(r[c])
+                args_n = len(inspect.getfullargspec(f).args)
+                if args_n == 1:
+                    r[c] = f(r[c])
+                elif args_n == 2:
+                    r[c] = f(self, r[c])
+                else:
+                    raise Exception('xfn or yfn arguments not understood')
         return r
 
     # -------------- batch mode
@@ -189,3 +195,24 @@ class SeqGen(utils.Sequence):
         else:
             raise Exception("mode didn't understood : {}".format(mode))
         self._mode = mode
+
+    # ====================================== other functions
+    @abc.abstractmethod
+    def xfn(self, data):
+        """
+        Parameters
+        ----------
+        data : np.ndarray
+            shape = (batch, time_series, features)
+        """
+        return data
+
+    @abc.abstractmethod
+    def yfn(self, data):
+        """
+        Parameters
+        ----------
+        data : np.ndarray
+            shape = (batch, time_series, features)
+        """
+        return data

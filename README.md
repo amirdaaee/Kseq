@@ -5,3 +5,7 @@ A Keras timeseries generator:
 * Data preprocessing on the fly!
 * Multiprocessing friendly
 * ...
+
+todo: 
+- [ ] add exmples
+- [ ] user guide
